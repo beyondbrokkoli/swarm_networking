@@ -1,5 +1,5 @@
 local ffi = require("ffi")
-
+local VibeMath = require("load")
 -- FLOAT PUNNING HELPER: Safely converts a float to a uint32_t so it fits in our C Queue
 local function f32_to_u32(f)
     return ffi.cast("uint32_t*", ffi.new("float[1]", f))[0]
