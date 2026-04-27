@@ -4,10 +4,10 @@ return function()
     function NetModule.Init(is_server)
         if is_server then
             -- We dynamically load and return the Server specialist
-            return require("modules.net_server")()
+            return require("net_server")()
         else
             -- We dynamically load and return the Client specialist
-            return require("modules.net_client")()
+            return require(".net_client")()
         end
     end
 

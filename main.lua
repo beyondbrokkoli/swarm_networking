@@ -6,23 +6,24 @@ local Sequence = require("sequence")
 local Benchmark = require("benchmark")
 
 -- [ THE GLOBALS ]
--- These must be global so modules like text.lua can see them 
--- to perform pixel-perfect 3D occlusion math.
+-- Keep these global because the C-Engine needs to see these specific pointers
 CANVAS_W, CANVAS_H = 0, 0
 HALF_W, HALF_H = 0, 0
 ZBuffer = nil
-Net = nil
-TextModule = nil
 
 -- [ THE LOCALS ]
+-- These belong to main.lua's state only
+local Net = nil
+local TextModule = nil
+local SwarmModule, CameraModule
 local ScreenBuffer, ScreenImage, ScreenPtr
 local read_buffer, write_buffer = 0, 1
 local global_time = 0
 local pendingResize = false
 local resizeTimer = 0.0
 
--- [ FIXED TIMESTEP METRONOME ]
-local TICK_RATE = 1.0 / 60.0 
+-- [ THE TICK METRONOME ]
+local TICK_RATE = 1.0 / 60.0
 local accumulator = 0.0
 
 local CMD = {
@@ -61,36 +62,44 @@ local function ReinitBuffers()
 end
 
 function love.load(arg)
-    -- 1. Infrastructure Boot
+    -- 1. Infrastructure
     ReinitBuffers()
     VibeMath.vmath_init_thread_pool()
 
-    -- 2. Module Boot via Sequence
+    -- 2. Load Modules into Sequence Registry
     Sequence.LoadModule("camera", MainCamera)
     Sequence.LoadModule("swarm")
     Sequence.LoadModule("text", MainCamera)
     Sequence.LoadModule("network")
 
-    SwarmModule = Sequence.Loaded["swarm"]
+    -- 3. Extract References
+    SwarmModule  = Sequence.Loaded["swarm"]
     CameraModule = Sequence.Loaded["camera"]
-    TextModule = Sequence.Loaded["text"]
-    Net = Sequence.Loaded["network"]
+    TextModule   = Sequence.Loaded["text"]
+    local NetFactory = Sequence.Loaded["network"]
 
-    -- 3. Networking Role Detection
+    -- 4. THE FACTORY SEPARATION
+    -- We figure out who we are...
     local is_client = false
     for _, v in ipairs(arg) do if v == "--client" then is_client = true end end
-    Net.Init(not is_client)
 
-    -- 4. Text Baking (Pre-load the VRAM/C-Pointers)
+    -- ...and we hire the correct specialist (Server or Client)
+    -- This Init call returns a NEW table (net_server or net_client)
+    Net = NetFactory.Init(not is_client)
+    
+    -- Now Net is a dedicated object. We call its internal Init to open the port.
+    Net.Init()
+
+    -- 5. Final Setup
     TextModule.Bake(1, "WAITING FOR PEER...")
     TextModule.Bake(2, "CONNECTION ESTABLISHED")
     TextModule.Bake(3, "SWARM CORE")
-    
+
     Sequence.RunPhase("Init")
 end
 
 function love.update(dt)
-    dt = math.min(dt, 0.1)
+    dt = math.min(dt, 0.1) -- "Lag Spike" safety valve
 
     if pendingResize then
         resizeTimer = resizeTimer - dt
@@ -98,31 +107,31 @@ function love.update(dt)
         return
     end
 
-    -- 1. Drain the TCP Sockets
+    -- A. Process Network Inbox immediately
     Net.Tick()
 
-    -- 2. Update Text States based on Network Reality
+    -- B. Handle HUD Transitions
     if Net.Connected then
         TextModule.SetState(1, false)
-        TextModule.SetState(2, true, 0, 8000, 0) -- Hover above swarm
+        TextModule.SetState(2, true, 0, 8000, 0)
     else
         TextModule.SetState(1, true, 0, 8000, 0)
         TextModule.SetState(2, false)
     end
     TextModule.SetState(3, true, 0, 5000, 0)
 
-    -- 3. The Accumulator (The Metronome)
+    -- C. THE METRONOME (Logical Heartbeat)
     accumulator = accumulator + dt
     while accumulator >= TICK_RATE do
         global_time = global_time + TICK_RATE
-        
-        -- Run the physics logic at exactly 60Hz
+
+        -- LOCKSTEP RULE: We only run the physics logic in 16.6ms chunks.
+        -- This is what prevents Age of Empires style desyncs.
         Sequence.RunPhase("Tick", TICK_RATE)
-        
+
         accumulator = accumulator - TICK_RATE
     end
 end
-
 function love.draw()
     if pendingResize then
         love.graphics.clear(0.05, 0.05, 0.05)
