@@ -131,6 +131,9 @@ AllocateSoA("int[?]", MAX_OBJS, {
 -- ==========================================
 
 ffi.cdef[[
+
+    extern uint32_t* g_TextPointers[256];
+
     typedef struct {
         float minX, minY, minZ;
         float maxX, maxY, maxZ;
@@ -185,7 +188,7 @@ ffi.cdef[[
         uint32_t* ScreenPtr, float* ZBuffer,
         int CANVAS_W, int CANVAS_H,
         float time, float dt,
-        int read_idx, int write_idx //
+        int read_idx, int write_idx
     );
     void vmath_init_thread_pool();
     void vmath_shutdown_thread_pool();

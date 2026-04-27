@@ -4,12 +4,14 @@ local VibeMath = require("load")
 local Memory = require("memory")
 local Sequence = require("sequence")
 local Benchmark = require("benchmark")
+    require("text")
 -- [NEW] Declare the module references here
 local SwarmModule
 local CameraModule
 local CANVAS_W, CANVAS_H
 local ScreenBuffer, ScreenImage, ScreenPtr
-local ZBuffer
+-- i think we have to make some of the things global now?
+ZBuffer
 local read_buffer = 0
 local write_buffer = 1
 local global_time = 0
@@ -64,30 +66,42 @@ function love.load()
     -- [NEW] Cache the reference exactly once after loading!
     SwarmModule = Sequence.Loaded["swarm"]
     CameraModule = Sequence.Loaded["camera"]
-
     Sequence.RunPhase("Init")
     -- Ignite the Permanent Quad-Core Engine!
     VibeMath.vmath_init_thread_pool()
+    TextModule.Bake(1, "WAITING FOR PEER...")
+    TextModule.Bake(2, "CONNECTION ESTABLISHED")
+    TextModule.Bake(3, "SWARM CORE")
+    TextModule.SetState(3, true, 0, 5000, 0) -- Turns on "SWARM CORE" at X, Y, Z
     collectgarbage()
 end
 
 function love.update(dt)
     -- Cap maximum frame-skip so a giant lag spike doesn't spiral out of control
-    if dt > 0.1 then dt = 0.1 end
-    dt = math.min(dt, 0.033)
-    -- [ THE RESIZE INTERCEPT ]
+    if dt > 0.1 then dt = 0.1 end 
+
     if pendingResize then
         resizeTimer = resizeTimer - dt
-        if resizeTimer <= 0 then
-            ReinitBuffers()
-            pendingResize = false
-        end
-        return -- Skip ALL physics and rendering while dragging the window!
+        if resizeTimer <= 0 then ReinitBuffers(); pendingResize = false end
+        return 
     end
-    global_time = global_time + dt
-    Sequence.RunPhase("Tick", dt)
-    -- [NEW] Run the benchmark override
-    Benchmark.Tick(dt, MainCamera, CameraModule, SwarmModule)
+
+    Net.Tick()
+
+    -- [THE ACCUMULATOR]
+    -- We pour the real-world time into the bucket
+    accumulator = accumulator + dt
+
+    -- We drain the bucket in exact, identical chunks
+    while accumulator >= TICK_RATE do
+        global_time = global_time + TICK_RATE
+        
+        -- IMPORTANT: Notice we pass TICK_RATE, not dt!
+        -- The C-Engine will always, mathematically, receive 0.0166666666...
+        Sequence.RunPhase("Tick", TICK_RATE)
+        
+        accumulator = accumulator - TICK_RATE
+    end
 end
 
 function love.draw()
@@ -131,7 +145,8 @@ function love.draw()
     -- 7. RENDER THE SWARM
     q[q_len] = CMD.RENDER_CULL; q_len = q_len + 1
     q[q_len] = 0;               q_len = q_len + 1 -- Pass ID 0 as argument
-
+    -- 8. RENDER THE TEXT
+    q_len = TextModule.QueueRaster(CANVAS_W, CANVAS_H, q, q_len)
     -- Ping-Pong the buffers!
     read_buffer, write_buffer = write_buffer, read_buffer
 
