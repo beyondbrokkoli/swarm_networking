@@ -31,7 +31,9 @@ local CMD = {
 }
 local pendingResize = false
 local resizeTimer = 0.0
-
+-- [NEW VARIABLES FOR FIXED TIMESTEP]
+local TICK_RATE = 1.0 / 60.0 -- Exactly 60 Hz logical ticks
+local accumulator = 0.0
 local function ReinitBuffers()
     CANVAS_W, CANVAS_H = love.graphics.getPixelDimensions()
     
@@ -70,6 +72,8 @@ function love.load()
 end
 
 function love.update(dt)
+    -- Cap maximum frame-skip so a giant lag spike doesn't spiral out of control
+    if dt > 0.1 then dt = 0.1 end
     dt = math.min(dt, 0.033)
     -- [ THE RESIZE INTERCEPT ]
     if pendingResize then

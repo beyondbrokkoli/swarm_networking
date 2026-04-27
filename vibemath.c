@@ -71,7 +71,8 @@
     static void vmath_cond_destroy(vmath_cond_t* cv) { pthread_cond_destroy(cv); }
 #endif
 
-
+// TEXT MODULE
+EXPORT uint32_t* g_TextPointers[256];
 // ========================================================
 // THE OS-SLEEP THREAD POOL STATE
 // ========================================================
@@ -817,8 +818,8 @@ EXPORT void vmath_swarm_generate_quads(
         float frustum_h = ((HALF_H * depth) / cam->fov) + size;
 
         // 4. Visibility Mask Check
-        bool is_visible = (cz + size >= 0.1f) && 
-                          (fabsf(cx) <= frustum_w) && 
+        bool is_visible = (cz + size >= 0.1f) &&
+                          (fabsf(cx) <= frustum_w) &&
                           (fabsf(cy) <= frustum_h);
 
         if (is_visible) {
@@ -1410,13 +1411,13 @@ EXPORT void vmath_swarm_metal(
         float phi = s * 10000.0f;
 
         // Standard math is perfectly fine here since it processes 7 particles max!
-        float sx = rxy * cosf(phi); 
+        float sx = rxy * cosf(phi);
         float sy = rxy * sinf(phi);
 
         // 2. EVALUATE 4D NOISE
         // If you wrote a fast_trig_noise_scalar function, call it here!
         // Otherwise, since this runs on <= 7 particles, a standard inline proxy is virtually free:
-        float noise = sinf(sx * 10.0f + time) * cosf(sy * 10.0f + time) * sinf(sz * 10.0f + time); 
+        float noise = sinf(sx * 10.0f + time) * cosf(sy * 10.0f + time) * sinf(sz * 10.0f + time);
 
         // 3. APPLY DISPLACEMENT
         float disp = noise * noise_blend * 3000.0f;
@@ -1597,27 +1598,27 @@ EXPORT void vmath_swarm_smales(
 THREAD_FUNC vmath_raster_worker(void* arg) {
     int band_id = (int)(intptr_t)arg;
     RasterThreadPayload* p = &g_raster_payloads[band_id];
-    
+
     while (1) {
         // 1. LOCK & SLEEP
         vmath_mutex_lock(&g_band_mutex[band_id]);
-        while (g_band_sig[band_id] == 0) { 
-            vmath_cond_wait(&g_band_cv_start[band_id], &g_band_mutex[band_id]); 
+        while (g_band_sig[band_id] == 0) {
+            vmath_cond_wait(&g_band_cv_start[band_id], &g_band_mutex[band_id]);
         }
-        
+
         // 2. CHECK FOR QUIT SIGNAL
         if (g_band_sig[band_id] == 2) {
             vmath_mutex_unlock(&g_band_mutex[band_id]);
-            break; 
+            break;
         }
-        vmath_mutex_unlock(&g_band_mutex[band_id]); 
+        vmath_mutex_unlock(&g_band_mutex[band_id]);
 
         // 3. DO THE HEAVY LIFTING
         RenderMemory* mem = p->mem;
         vmath_rasterize_list(
             p->display_list, p->list_count,
             mem->Tri_V1, mem->Tri_V2, mem->Tri_V3,
-            mem->Vert_PX, mem->Vert_PY, mem->Vert_PZ, 
+            mem->Vert_PX, mem->Vert_PY, mem->Vert_PZ,
             mem->Tri_ShadedColor,
             p->ScreenPtr, p->ZBuffer, p->CANVAS_W, p->CANVAS_H,
             p->min_clip_y, p->max_clip_y
@@ -1699,14 +1700,14 @@ EXPORT void vmath_render_batch(
 
         for (int i = 0; i < tCount; i++) {
             int abs_i = tStart + i;
-            
+
             // Highly predictable branch, perfectly safe to leave as-is
-            if (!mem->Tri_Valid[abs_i]) continue; 
+            if (!mem->Tri_Valid[abs_i]) continue;
 
             float min_y = mem->Tri_MinY[abs_i];
             float max_y = mem->Tri_MaxY[abs_i];
 
-            // 1. Evaluate conditions into pure integers (0 or 1). 
+            // 1. Evaluate conditions into pure integers (0 or 1).
             // Using bitwise & forces evaluation without short-circuit branching.
             int m0 = (min_y < q1);
             int m1 = (max_y >= q1) & (min_y < q2);
@@ -1731,14 +1732,14 @@ EXPORT void vmath_render_batch(
     float band_height = CANVAS_H * 0.25f; // Quick math for clip bounds
 
     for (int b = 0; b < 4; b++) {
-        g_raster_payloads[b].display_list = g_BandLists[b]; 
+        g_raster_payloads[b].display_list = g_BandLists[b];
         g_raster_payloads[b].list_count = band_counts[b];
-        g_raster_payloads[b].mem = mem; 
-        g_raster_payloads[b].ScreenPtr = ScreenPtr; 
+        g_raster_payloads[b].mem = mem;
+        g_raster_payloads[b].ScreenPtr = ScreenPtr;
         g_raster_payloads[b].ZBuffer = ZBuffer;
-        g_raster_payloads[b].CANVAS_W = CANVAS_W; 
+        g_raster_payloads[b].CANVAS_W = CANVAS_W;
         g_raster_payloads[b].CANVAS_H = CANVAS_H;
-        g_raster_payloads[b].min_clip_y = (int)(b * band_height); 
+        g_raster_payloads[b].min_clip_y = (int)(b * band_height);
         g_raster_payloads[b].max_clip_y = (b == 3) ? CANVAS_H - 1 : (int)((b + 1) * band_height) - 1;
 
         // WAKE UP BAND THREAD
@@ -1752,8 +1753,8 @@ EXPORT void vmath_render_batch(
     // SYNCHRONIZATION: Sleep main thread until ALL 4 bands reply they are done
     for (int b = 0; b < 4; b++) {
         vmath_mutex_lock(&g_band_mutex[b]);
-        while (g_band_done[b] == 0) { 
-            vmath_cond_wait(&g_band_cv_done[b], &g_band_mutex[b]); 
+        while (g_band_done[b] == 0) {
+            vmath_cond_wait(&g_band_cv_done[b], &g_band_mutex[b]);
         }
         vmath_mutex_unlock(&g_band_mutex[b]);
     }
@@ -1853,12 +1854,12 @@ THREAD_FUNC vmath_physics_worker(void* arg) {
     while (1) {
         // SLEEP UNTIL NEEDED
         vmath_mutex_lock(&g_phys_mutex);
-        while (g_phys_sig == 0) { 
-            vmath_cond_wait(&g_phys_cv_start, &g_phys_mutex); 
+        while (g_phys_sig == 0) {
+            vmath_cond_wait(&g_phys_cv_start, &g_phys_mutex);
         }
-        if (g_phys_sig == 2) { 
+        if (g_phys_sig == 2) {
             vmath_mutex_unlock(&g_phys_mutex);
-            break; 
+            break;
         }
         vmath_mutex_unlock(&g_phys_mutex);
 
@@ -1930,6 +1931,68 @@ THREAD_FUNC vmath_physics_worker(void* arg) {
     }
     return THREAD_RETURN_VAL;
 }
+// TEXT MODULE
+EXPORT void vmath_stamp_text(
+    uint32_t* ScreenPtr, float* ZBuffer, int CANVAS_W, int CANVAS_H,
+    uint32_t* TextPtr, int tw, int th,
+    int startX, int startY, float z_threshold, float draw_scale, float master_alpha
+) {
+    if (master_alpha <= 0.01f || !TextPtr) return;
+
+    int sw = (int)(tw * draw_scale);
+    int sh = (int)(th * draw_scale);
+    if (sw <= 0 || sh <= 0) return;
+
+    int clipX = startX < 0 ? 0 : startX;
+    int clipY = startY < 0 ? 0 : startY;
+    int endX = (startX + sw - 1) >= CANVAS_W ? CANVAS_W - 1 : (startX + sw - 1);
+    int endY = (startY + sh - 1) >= CANVAS_H ? CANVAS_H - 1 : (startY + sh - 1);
+
+    float inv_scale = 1.0f / draw_scale;
+    int global_a256 = (int)(master_alpha * 255.0f);
+
+    for (int y = clipY; y <= endY; y++) {
+        int ty = (int)((y - startY) * inv_scale);
+        if (ty < 0 || ty >= th) continue;
+
+        int screenOff = y * CANVAS_W;
+        int buffOff = ty * tw;
+
+        for (int x = clipX; x <= endX; x++) {
+            // 1. Check Z-Buffer FIRST (Instantly skip hidden pixels)
+            if (ZBuffer[screenOff + x] < z_threshold) continue;
+
+            int tx = (int)((x - startX) * inv_scale);
+            if (tx < 0 || tx >= tw) continue;
+
+            uint32_t px = TextPtr[buffOff + tx];
+            if (px < 0x01000000) continue; // Transparent pixel
+
+            int src_a = px >> 24;
+            int final_a = (src_a * global_a256) >> 8;
+
+            if (final_a > 0) {
+                // Exact match of your Lua bitwise math!
+                int src_r = (px >> 16) & 0xFF;
+                int src_g = (px >> 8) & 0xFF;
+                int src_b = px & 0xFF;
+
+                uint32_t bg = ScreenPtr[screenOff + x];
+                int bg_r = (bg >> 16) & 0xFF;
+                int bg_g = (bg >> 8) & 0xFF;
+                int bg_b = bg & 0xFF;
+
+                int inv_a = 255 - final_a;
+
+                int r = (src_r * final_a + bg_r * inv_a) >> 8;
+                int g = (src_g * final_a + bg_g * inv_a) >> 8;
+                int b = (src_b * final_a + bg_b * inv_a) >> 8;
+
+                ScreenPtr[screenOff + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+}
 // ========================================================
 // MAIN DISPATCHER UPDATE
 // ========================================================
@@ -1984,9 +2047,25 @@ EXPORT void vmath_execute_queue(
                 vmath_render_batch(id, id, cam, HALF_W, HALF_H, sun_x, sun_y, sun_z, mem, ScreenPtr, ZBuffer, CANVAS_W, CANVAS_H);
                 break;
             }
+            case 15: { // CMD_STAMP_TEXT
+                int text_id = queue[++i];
+                int tw = queue[++i];
+                int th = queue[++i];
+                int startX = queue[++i];
+                int startY = queue[++i];
+                float z_threshold = *((float*)&queue[++i]);
+                float draw_scale = *((float*)&queue[++i]);
+                float master_alpha = *((float*)&queue[++i]);
+
+                // Pull the 64-bit pointer safely from our global array
+                uint32_t* TextPtr = g_TextPointers[text_id];
+
+                vmath_stamp_text(ScreenPtr, ZBuffer, CANVAS_W, CANVAS_H, TextPtr, tw, th, startX, startY, z_threshold, draw_scale, master_alpha);
+                break;
+            }
         }
     }
-    // WAIT FOR PHYSICS TO FINISH
+    // WAIT kFOR PHYSICS TO FINISH
     vmath_mutex_lock(&g_phys_mutex);
     while (g_phys_done == 0) {
         vmath_cond_wait(&g_phys_cv_done, &g_phys_mutex);
@@ -2002,8 +2081,8 @@ EXPORT void vmath_init_thread_pool() {
 
     // Initialize N-Bands
     for (int b = 0; b < NUM_BANDS; b++) {
-        vmath_mutex_init(&g_band_mutex[b]); 
-        vmath_cond_init(&g_band_cv_start[b]);  
+        vmath_mutex_init(&g_band_mutex[b]);
+        vmath_cond_init(&g_band_cv_start[b]);
         vmath_cond_init(&g_band_cv_done[b]);
         g_band_sig[b] = 0;
         g_band_done[b] = 1;
@@ -2020,15 +2099,15 @@ EXPORT void vmath_shutdown_thread_pool() {
 
     // Shutdown N-Bands
     for (int b = 0; b < NUM_BANDS; b++) {
-        vmath_mutex_lock(&g_band_mutex[b]);  
-        g_band_sig[b] = 2;  
-        vmath_cond_broadcast(&g_band_cv_start[b]);  
+        vmath_mutex_lock(&g_band_mutex[b]);
+        g_band_sig[b] = 2;
+        vmath_cond_broadcast(&g_band_cv_start[b]);
         vmath_mutex_unlock(&g_band_mutex[b]);
 
         vmath_thread_join(g_raster_threads[b]);
 
-        vmath_mutex_destroy(&g_band_mutex[b]);  
-        vmath_cond_destroy(&g_band_cv_start[b]);  
+        vmath_mutex_destroy(&g_band_mutex[b]);
+        vmath_cond_destroy(&g_band_cv_start[b]);
         vmath_cond_destroy(&g_band_cv_done[b]);
     }
 }
